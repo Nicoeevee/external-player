@@ -469,11 +469,17 @@ const PARSER = {
             await this.parseTime();
         }
         async parseVideo() {
+            let matchedUrls = [];
             for (const video of document.getElementsByTagName('video')) {
                 if (await this.check(video.src)) {
-                    currentMedia.video = video.src;
-                    return;
+                    matchedUrls.push(video.src);
                 }
+            }
+            matchedUrls = [...new Set(matchedUrls)];
+            if (matchedUrls.length === 1) {
+                currentMedia.video = matchedUrls[0];
+            } else if (matchedUrls.length > 1) {
+                currentMedia.video = await showLinkSelectionModal(matchedUrls);
             }
         }
         async check(video) {
@@ -488,11 +494,11 @@ const PARSER = {
             await this.parseTime();
         }
         async parseVideo() {
+            let matchedUrls = [];
             let urls = currentUrl.match(VIDEO_URL_REGEX_GLOBAL) || [];
             for (const url of urls) {
                 if (await this.check(url)) {
-                    currentMedia.video = url;
-                    return;
+                    matchedUrls.push(url);
                 }
             }
 
@@ -500,10 +506,15 @@ const PARSER = {
                 let urls = iframe.src.match(VIDEO_URL_REGEX_GLOBAL) || [];
                 for (const url of urls) {
                     if (await this.check(url)) {
-                        currentMedia.video = url;
-                        return;
+                        matchedUrls.push(url);
                     }
                 }
+            }
+            matchedUrls = [...new Set(matchedUrls)];
+            if (matchedUrls.length === 1) {
+                currentMedia.video = matchedUrls[0];
+            } else if (matchedUrls.length > 1) {
+                currentMedia.video = await showLinkSelectionModal(matchedUrls);
             }
         }
     },
@@ -514,12 +525,18 @@ const PARSER = {
             await this.parseTime();
         }
         async parseVideo() {
+            let matchedUrls = [];
             let urls = document.body.innerHTML.match(VIDEO_URL_REGEX_GLOBAL) || [];
             for (const url of urls) {
                 if (await this.check(url)) {
-                    currentMedia.video = url;
-                    return;
+                    matchedUrls.push(url);
                 }
+            }
+            matchedUrls = [...new Set(matchedUrls)];
+            if (matchedUrls.length === 1) {
+                currentMedia.video = matchedUrls[0];
+            } else if (matchedUrls.length > 1) {
+                currentMedia.video = await showLinkSelectionModal(matchedUrls);
             }
         }
     },
@@ -530,14 +547,20 @@ const PARSER = {
             await this.parseTime();
         }
         async parseVideo() {
+            let matchedUrls = [];
             for (const script of document.scripts) {
                 let urls = script.innerHTML.match(VIDEO_URL_REGEX_GLOBAL) || [];
                 for (const url of urls) {
                     if (await this.check(url)) {
-                        currentMedia.video = url;
-                        return;
+                        matchedUrls.push(url);
                     }
                 }
+            }
+            matchedUrls = [...new Set(matchedUrls)];
+            if (matchedUrls.length === 1) {
+                currentMedia.video = matchedUrls[0];
+            } else if (matchedUrls.length > 1) {
+                currentMedia.video = await showLinkSelectionModal(matchedUrls);
             }
         }
     },
@@ -545,21 +568,20 @@ const PARSER = {
         constructor() {
             super();
             this.video = undefined;
+            this.videos = [];
             let that = this;
             const open = XMLHttpRequest.prototype.open;
             XMLHttpRequest.prototype.open = function (method, url, async, user, password) {
-                if (!that.video) {
-                    let urls = url.match(VIDEO_URL_REGEX_GLOBAL) || [];
-                    for (const vurl of urls) {
-                        that.check(vurl).check().then(
-                            result => {
-                                if (result === true) {
-                                    that.video = vurl;
-                                }
+                let urls = (typeof url === 'string' ? url.match(VIDEO_URL_REGEX_GLOBAL) : null) || [];
+                for (const vurl of urls) {
+                    that.check(vurl).then(
+                        result => {
+                            if (result === true) {
+                                that.video = vurl;
+                                that.videos.push(vurl);
                             }
-                        )
-                    }
-
+                        }
+                    ).catch(() => {});
                 }
                 return open.apply(this, arguments);
             };
@@ -568,17 +590,17 @@ const PARSER = {
 
             window.fetch = function (url, options) {
                 return originalFetch(url, options).then(response => {
-                    if (!that.video) {
-                        let urls = url.match(VIDEO_URL_REGEX_GLOBAL) || [];
-                        for (const vurl of urls) {
-                            that.check(vurl).check().then(
-                                result => {
-                                    if (result === true) {
-                                        that.video = vurl;
-                                    }
+                    let urlStr = typeof url === 'string' ? url : (url && url.url ? url.url : '');
+                    let urls = urlStr.match(VIDEO_URL_REGEX_GLOBAL) || [];
+                    for (const vurl of urls) {
+                        that.check(vurl).then(
+                            result => {
+                                if (result === true) {
+                                    that.video = vurl;
+                                    that.videos.push(vurl);
                                 }
-                            )
-                        }
+                            }
+                        ).catch(() => {});
                     }
                     return response;
                 });
@@ -591,7 +613,14 @@ const PARSER = {
             await this.parseTime();
         }
         async parseVideo() {
-            currentMedia.video = this.video;
+            let matchedUrls = [...new Set(this.videos)];
+            if (matchedUrls.length === 1) {
+                currentMedia.video = matchedUrls[0];
+            } else if (matchedUrls.length > 1) {
+                currentMedia.video = await showLinkSelectionModal(matchedUrls);
+            } else {
+                currentMedia.video = this.video;
+            }
         }
     },
     BILIBILI: class Parser extends BaseParser {
@@ -1288,6 +1317,98 @@ function showLoading(timeout) {
 
 function hideLoading() {
     loadingDiv.style.display = 'none';
+}
+
+function showLinkSelectionModal(urls) {
+    return new Promise((resolve) => {
+        const MODAL_DIV_ID = `${PROJECT_NAME}-modal-div`;
+        let modalDiv = document.getElementById(MODAL_DIV_ID);
+        if (modalDiv) {
+            modalDiv.remove();
+        }
+        
+        modalDiv = document.createElement('div');
+        modalDiv.id = MODAL_DIV_ID;
+        modalDiv.style.position = 'fixed';
+        modalDiv.style.top = '0';
+        modalDiv.style.left = '0';
+        modalDiv.style.width = '100vw';
+        modalDiv.style.height = '100vh';
+        modalDiv.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+        modalDiv.style.zIndex = FIRST_Z_INDEX;
+        modalDiv.style.display = 'flex';
+        modalDiv.style.justifyContent = 'center';
+        modalDiv.style.alignItems = 'center';
+
+        const contentDiv = document.createElement('div');
+        contentDiv.style.backgroundColor = '#fff';
+        contentDiv.style.padding = '20px';
+        contentDiv.style.borderRadius = '10px';
+        contentDiv.style.maxWidth = '80%';
+        contentDiv.style.maxHeight = '80%';
+        contentDiv.style.overflow = 'auto';
+        contentDiv.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.1)';
+        
+        const title = document.createElement('h3');
+        title.textContent = currentConfig.global.language === 'zh' ? '请选择要播放的视频链接' : 'Select Video Link';
+        title.style.marginTop = '0';
+        title.style.color = COLOR.TEXT;
+        title.style.borderBottom = `1px solid ${COLOR.BORDER}`;
+        title.style.paddingBottom = '10px';
+        contentDiv.appendChild(title);
+
+        const list = document.createElement('div');
+        list.style.display = 'flex';
+        list.style.flexDirection = 'column';
+        list.style.gap = '10px';
+        list.style.marginTop = '15px';
+
+        urls.forEach(url => {
+            const btn = document.createElement('button');
+            btn.textContent = url;
+            btn.style.padding = '10px';
+            btn.style.border = `1px solid ${COLOR.BORDER}`;
+            btn.style.borderRadius = '5px';
+            btn.style.backgroundColor = 'transparent';
+            btn.style.color = COLOR.PRIMARY;
+            btn.style.cursor = 'pointer';
+            btn.style.wordBreak = 'break-all';
+            btn.style.textAlign = 'left';
+            btn.addEventListener('mouseover', () => {
+                btn.style.backgroundColor = COLOR.PRIMARY;
+                btn.style.color = COLOR.TEXT_ACTIVE;
+            });
+            btn.addEventListener('mouseout', () => {
+                btn.style.backgroundColor = 'transparent';
+                btn.style.color = COLOR.PRIMARY;
+            });
+            btn.addEventListener('click', () => {
+                modalDiv.remove();
+                resolve(url);
+            });
+            list.appendChild(btn);
+        });
+        contentDiv.appendChild(list);
+
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = currentConfig.global.language === 'zh' ? '取消' : 'Cancel';
+        closeBtn.style.marginTop = '20px';
+        closeBtn.style.padding = '10px 20px';
+        closeBtn.style.border = 'none';
+        closeBtn.style.borderRadius = '5px';
+        closeBtn.style.backgroundColor = COLOR.WARNING;
+        closeBtn.style.color = '#fff';
+        closeBtn.style.cursor = 'pointer';
+        closeBtn.style.float = 'right';
+        closeBtn.addEventListener('click', () => {
+            modalDiv.remove();
+            resolve(undefined);
+        });
+        contentDiv.appendChild(closeBtn);
+
+        modalDiv.appendChild(contentDiv);
+        document.body.appendChild(modalDiv);
+    });
 }
 
 function appendButtonDiv() {
