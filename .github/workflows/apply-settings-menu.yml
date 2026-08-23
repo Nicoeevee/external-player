@@ -1,9 +1,9 @@
 name: Apply Tampermonkey settings menu patch
 
 on:
-  pull_request:
+  push:
     branches:
-      - main
+      - feat/tampermonkey-settings-menu
 
 permissions:
   contents: write
