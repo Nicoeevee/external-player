@@ -1,0 +1,157 @@
+name: Apply Tampermonkey settings menu patch
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/tampermonkey-settings-menu
+          fetch-depth: 0
+
+      - name: Apply source patch
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('external-player.user.js')
+          source = path.read_text(encoding='utf-8')
+
+          def replace_once(old, new, label):
+              global source
+              if old not in source:
+                  raise SystemExit(f'Patch target not found: {label}')
+              source = source.replace(old, new, 1)
+
+          replace_once(
+              "// @grant                   GM_getValue\n// @grant                   GM.xmlHttpRequest\n",
+              "// @grant                   GM_getValue\n// @grant                   GM_registerMenuCommand\n// @grant                   GM.xmlHttpRequest\n",
+              'userscript grant',
+          )
+
+          marker = "function appendSettingButton() {\n"
+          helpers = r'''async function ensureSettingsUi() {
+              if (!currentConfig) {
+                  currentConfig = loadConfig();
+                  translation = translations[currentConfig.global.language];
+                  currentUrl = location.href;
+              }
+
+              while (!document.head || !document.body) {
+                  await sleep(50);
+              }
+
+              if (!style || !style.isConnected) {
+                  appendCss();
+              }
+              appendToastDiv();
+              appendLoadingDiv();
+          }
+
+          async function openSettings() {
+              await ensureSettingsUi();
+              await appendSettingIframe();
+              settingIframe.contentWindow.postMessage({
+                  name: PROJECT_NAME,
+                  method: 'loadConfig',
+                  defaultConfig: defaultConfig,
+                  config: currentConfig
+              }, '*');
+              settingIframe.style.display = 'block';
+          }
+
+          async function toggleSettings() {
+              if (settingIframe && settingIframe.style.display === 'block') {
+                  settingIframe.style.display = 'none';
+                  return;
+              }
+              await openSettings();
+          }
+
+          '''
+          replace_once(marker, helpers + marker, 'settings helpers')
+
+          replace_once(
+          r'''    settingButton.addEventListener('click', async () => {
+                  await appendSettingIframe();
+                  if (settingIframe.style.display === "block") {
+                      settingIframe.style.display = "none";
+                  } else {
+                      settingIframe.contentWindow.postMessage({
+                          name: PROJECT_NAME,
+                          method: 'loadConfig',
+                          defaultConfig: defaultConfig,
+                          config: currentConfig
+                      }, '*');
+                      settingIframe.style.display = "block";
+                  }
+              });
+          ''',
+          r'''    settingButton.addEventListener('click', async () => {
+                  await toggleSettings();
+              });
+          ''',
+          'setting button handler',
+          )
+
+          replace_once(
+          r'''    document.addEventListener('keydown', (event) => {
+                  // 打开设置：Ctrl + Alt + E
+                  if (event.ctrlKey && event.altKey && (event.key === 'e' || event.key === 'E')) {
+                      event.preventDefault();
+                      startFlashing(settingButton);
+                      settingButton.click();
+                  }
+              });
+          ''',
+          r'''    document.addEventListener('keydown', async (event) => {
+                  // 打开设置：Ctrl + Alt + E
+                  if (event.ctrlKey && event.altKey && (event.key === 'e' || event.key === 'E')) {
+                      event.preventDefault();
+                      if (settingButton) {
+                          startFlashing(settingButton);
+                      }
+                      await toggleSettings();
+                  }
+              });
+          ''',
+          'settings hotkey',
+          )
+
+          replace_once(
+          "setInterval(() => {\n",
+          r'''if (self === top && typeof GM_registerMenuCommand === 'function') {
+              GM_registerMenuCommand('打开设置 / Open Settings', () => {
+                  toggleSettings().catch(error => console.error('Failed to open settings from userscript menu', error));
+              });
+          }
+
+          setInterval(() => {
+          ''',
+          'Tampermonkey menu registration',
+          )
+
+          path.write_text(source, encoding='utf-8')
+
+      - name: Validate JavaScript syntax
+        run: node --check external-player.user.js
+
+      - name: Validate diff
+        run: git diff --check
+
+      - name: Commit source change
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add external-player.user.js
+          git commit -m "feat: add Tampermonkey settings menu entry"
+          git push origin HEAD:feat/tampermonkey-settings-menu
