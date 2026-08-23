@@ -1,17 +1,16 @@
 name: Fix settings save cleanup
 
 on:
-  pull_request:
+  push:
     branches:
-      - main
-    types:
-      - ready_for_review
+      - feat/tampermonkey-settings-menu
 
 permissions:
   contents: write
 
 jobs:
   patch:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
