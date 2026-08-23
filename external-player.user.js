@@ -16,6 +16,7 @@
 // @connect                 v.anime1.me
 // @grant                   GM_setValue
 // @grant                   GM_getValue
+// @grant                   GM_registerMenuCommand
 // @grant                   GM.xmlHttpRequest
 // @run-at                  document-start
 // ==/UserScript==
@@ -1662,24 +1663,51 @@ function appendPlayButton() {
     });
 }
 
+async function ensureSettingsUi() {
+    if (!currentConfig) {
+        currentConfig = loadConfig();
+        translation = translations[currentConfig.global.language];
+        currentUrl = location.href;
+    }
+
+    while (!document.head || !document.body) {
+        await sleep(50);
+    }
+
+    if (!style || !style.isConnected) {
+        appendCss();
+    }
+    appendToastDiv();
+    appendLoadingDiv();
+}
+
+async function openSettings() {
+    await ensureSettingsUi();
+    await appendSettingIframe();
+    settingIframe.contentWindow.postMessage({
+        name: PROJECT_NAME,
+        method: 'loadConfig',
+        defaultConfig: defaultConfig,
+        config: currentConfig
+    }, '*');
+    settingIframe.style.display = 'block';
+}
+
+async function toggleSettings() {
+    if (settingIframe && settingIframe.style.display === 'block') {
+        settingIframe.style.display = 'none';
+        return;
+    }
+    await openSettings();
+}
+
 function appendSettingButton() {
     settingButton = document.createElement('button');
     settingButton.id = `${PROJECT_NAME}-setting-button`;
     settingButton.title = 'Ctrl + Alt + E';
 
     settingButton.addEventListener('click', async () => {
-        await appendSettingIframe();
-        if (settingIframe.style.display === "block") {
-            settingIframe.style.display = "none";
-        } else {
-            settingIframe.contentWindow.postMessage({
-                name: PROJECT_NAME,
-                method: 'loadConfig',
-                defaultConfig: defaultConfig,
-                config: currentConfig
-            }, '*');
-            settingIframe.style.display = "block";
-        }
+        await toggleSettings();
     });
     buttonDiv.appendChild(settingButton);
 
@@ -2731,25 +2759,35 @@ async function appendSettingIframe() {
     }
 }
 
-function saveConfig(config) {
+async function saveConfig(config) {
     // 保存配置
     currentConfig = config;
     GM_setValue('config', currentConfig);
-    showToast(translation.saveSuccessfully);
+
+    // 设置 iframe 依赖全局样式。重新加载样式前先移除它，避免失去 CSS 后
+    // 退化成浏览器默认尺寸并残留在页面左侧。
+    if (settingIframe) {
+        settingIframe.remove();
+        settingIframe = undefined;
+    }
 
     // 移除旧元素
     if (style) {
-        document.head.removeChild(style);
+        style.remove();
         style = undefined;
     }
     if (buttonDiv) {
-        document.body.removeChild(buttonDiv);
+        buttonDiv.remove();
         buttonDiv = undefined;
+        settingButton = undefined;
     }
 
-    // 重新初始化
+    // 重新初始化。即使当前页面仍没有匹配解析器，也恢复设置 UI 的基础样式，
+    // 以便保存成功提示保持正常，并让下次从 Tampermonkey 菜单打开设置时状态干净。
     isReloading = true;
-    init(currentUrl);
+    await init(currentUrl);
+    await ensureSettingsUi();
+    showToast(translation.saveSuccessfully);
 }
 
 function startFlashing(element) {
@@ -2827,12 +2865,14 @@ function initTop() {
     });
 
     // 快捷键
-    document.addEventListener('keydown', (event) => {
+    document.addEventListener('keydown', async (event) => {
         // 打开设置：Ctrl + Alt + E
         if (event.ctrlKey && event.altKey && (event.key === 'e' || event.key === 'E')) {
             event.preventDefault();
-            startFlashing(settingButton);
-            settingButton.click();
+            if (settingButton) {
+                startFlashing(settingButton);
+            }
+            await toggleSettings();
         }
     });
 
@@ -2904,6 +2944,12 @@ async function init(url) {
         initIframe();
     }
     currentUrl = url;
+}
+
+if (self === top && typeof GM_registerMenuCommand === 'function') {
+    GM_registerMenuCommand('打开设置 / Open Settings', () => {
+        toggleSettings().catch(error => console.error('Failed to open settings from userscript menu', error));
+    });
 }
 
 setInterval(() => {
