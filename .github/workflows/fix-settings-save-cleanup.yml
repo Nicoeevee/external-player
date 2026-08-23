@@ -1,0 +1,102 @@
+name: Fix settings save cleanup
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - ready_for_review
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/tampermonkey-settings-menu
+          fetch-depth: 0
+
+      - name: Apply fix
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('external-player.user.js')
+          source = path.read_text(encoding='utf-8')
+
+          old = '''function saveConfig(config) {
+              // 保存配置
+              currentConfig = config;
+              GM_setValue('config', currentConfig);
+              showToast(translation.saveSuccessfully);
+
+              // 移除旧元素
+              if (style) {
+                  document.head.removeChild(style);
+                  style = undefined;
+              }
+              if (buttonDiv) {
+                  document.body.removeChild(buttonDiv);
+                  buttonDiv = undefined;
+              }
+
+              // 重新初始化
+              isReloading = true;
+              init(currentUrl);
+          }
+          '''
+
+          new = '''async function saveConfig(config) {
+              // 保存配置
+              currentConfig = config;
+              GM_setValue('config', currentConfig);
+
+              // 设置 iframe 依赖全局样式。重新加载样式前先移除它，避免失去 CSS 后
+              // 退化成浏览器默认尺寸并残留在页面左侧。
+              if (settingIframe) {
+                  settingIframe.remove();
+                  settingIframe = undefined;
+              }
+
+              // 移除旧元素
+              if (style) {
+                  style.remove();
+                  style = undefined;
+              }
+              if (buttonDiv) {
+                  buttonDiv.remove();
+                  buttonDiv = undefined;
+                  settingButton = undefined;
+              }
+
+              // 重新初始化。即使当前页面仍没有匹配解析器，也恢复设置 UI 的基础样式，
+              // 以便保存成功提示保持正常，并让下次从 Tampermonkey 菜单打开设置时状态干净。
+              isReloading = true;
+              await init(currentUrl);
+              await ensureSettingsUi();
+              showToast(translation.saveSuccessfully);
+          }
+          '''
+
+          if old not in source:
+              raise SystemExit('saveConfig target not found')
+
+          source = source.replace(old, new, 1)
+          path.write_text(source, encoding='utf-8')
+
+      - name: Validate JavaScript syntax
+        run: node --check external-player.user.js
+
+      - name: Validate diff
+        run: git diff --check
+
+      - name: Commit fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add external-player.user.js
+          git commit -m "fix: fully close settings after save"
+          git push origin HEAD:feat/tampermonkey-settings-menu
