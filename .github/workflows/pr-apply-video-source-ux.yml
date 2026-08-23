@@ -1,0 +1,48 @@
+name: Apply video source UX patch on PR
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/video-source-confidence-ux
+          fetch-depth: 0
+
+      - name: Extract and apply patch
+        run: |
+          awk '
+            /- name: Apply patch/ { in_step=1; next }
+            in_step && /shell: python/ { next }
+            in_step && /run: \|/ { in_script=1; next }
+            in_script && /- name: Validate JavaScript syntax/ { exit }
+            in_script { sub(/^          /, ""); print }
+          ' .github/workflows/apply-video-source-ux.yml > /tmp/apply_patch.py
+          python /tmp/apply_patch.py
+
+      - name: Validate JavaScript syntax
+        run: node --check external-player.user.js
+
+      - name: Validate diff
+        run: git diff --check
+
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add external-player.user.js
+          if git diff --cached --quiet; then
+            echo "No source changes to commit"
+            exit 0
+          fi
+          git commit -m "feat: improve video source selection confidence UX"
+          git push origin HEAD:feat/video-source-confidence-ux
