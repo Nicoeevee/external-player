@@ -6,6 +6,7 @@ on:
       - main
     types:
       - ready_for_review
+      - synchronize
 
 permissions:
   contents: write
@@ -130,14 +131,16 @@ jobs:
           )
 
           replace_once(
-          "setInterval(() => {\n",
-          r'''if (self === top && typeof GM_registerMenuCommand === 'function') {
+          "\nsetInterval(() => {\n    const url = location.href;\n",
+          r'''
+          if (self === top && typeof GM_registerMenuCommand === 'function') {
               GM_registerMenuCommand('打开设置 / Open Settings', () => {
                   toggleSettings().catch(error => console.error('Failed to open settings from userscript menu', error));
               });
           }
 
           setInterval(() => {
+              const url = location.href;
           ''',
           'Tampermonkey menu registration',
           )
