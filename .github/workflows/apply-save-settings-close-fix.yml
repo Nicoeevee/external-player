@@ -6,12 +6,14 @@ on:
       - main
     types:
       - ready_for_review
+      - synchronize
 
 permissions:
   contents: write
 
 jobs:
   patch:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
