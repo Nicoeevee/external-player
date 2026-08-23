@@ -1,21 +1,22 @@
 name: Apply save settings cleanup fix
 
 on:
-  push:
+  pull_request:
     branches:
       - feat/tampermonkey-settings-menu
+    types:
+      - opened
 
 permissions:
   contents: write
 
 jobs:
   patch:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: feat/tampermonkey-settings-menu
+          ref: fix/save-settings-close-apply
           fetch-depth: 0
 
       - name: Apply source patch
@@ -79,4 +80,4 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add external-player.user.js
           git commit -m "fix: fully close settings after save"
-          git push origin HEAD:feat/tampermonkey-settings-menu
+          git push origin HEAD:fix/save-settings-close-apply
