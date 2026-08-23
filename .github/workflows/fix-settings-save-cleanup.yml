@@ -99,3 +99,5 @@ jobs:
           git add external-player.user.js
           git commit -m "fix: fully close settings after save"
           git push origin HEAD:feat/tampermonkey-settings-menu
+
+# Trigger commit for the temporary patch workflow.
