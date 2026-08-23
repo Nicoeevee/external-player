@@ -7,6 +7,7 @@ on:
     types:
       - ready_for_review
       - synchronize
+      - reopened
 
 permissions:
   contents: write
