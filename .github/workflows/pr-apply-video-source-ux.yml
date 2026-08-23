@@ -18,18 +18,8 @@ jobs:
           ref: feat/video-source-confidence-ux
           fetch-depth: 0
 
-      - name: Extract and apply patch
-        run: |
-          awk '
-            /- name: Apply patch/ { in_step=1; next }
-            in_step && /shell: python/ { next }
-            in_step && /run: \|/ { in_script=1; next }
-            in_script && /- name: Validate JavaScript syntax/ { exit }
-            in_script { sub(/^          /, ""); print }
-          ' .github/workflows/apply-video-source-ux.yml > /tmp/apply_patch.py
-          sed -i 's/^                latestError = error;/                    latestError = error;/' /tmp/apply_patch.py
-          sed -i 's/^                console\.error(`第/                    console.error(`第/' /tmp/apply_patch.py
-          python /tmp/apply_patch.py
+      - name: Apply patch
+        run: python .github/scripts/apply_video_source_ux.py
 
       - name: Validate JavaScript syntax
         run: node --check external-player.user.js
