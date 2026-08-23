@@ -1,13 +1,9 @@
 name: Apply save settings cleanup fix
 
 on:
-  pull_request:
+  push:
     branches:
-      - main
-    types:
-      - ready_for_review
-      - synchronize
-      - reopened
+      - feat/tampermonkey-settings-menu
 
 permissions:
   contents: write
