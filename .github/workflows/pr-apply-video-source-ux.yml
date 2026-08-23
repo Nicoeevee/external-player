@@ -27,6 +27,8 @@ jobs:
             in_script && /- name: Validate JavaScript syntax/ { exit }
             in_script { sub(/^          /, ""); print }
           ' .github/workflows/apply-video-source-ux.yml > /tmp/apply_patch.py
+          sed -i 's/^                latestError = error;/                    latestError = error;/' /tmp/apply_patch.py
+          sed -i 's/^                console\.error(`第/                    console.error(`第/' /tmp/apply_patch.py
           python /tmp/apply_patch.py
 
       - name: Validate JavaScript syntax
