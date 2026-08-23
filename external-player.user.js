@@ -2759,25 +2759,35 @@ async function appendSettingIframe() {
     }
 }
 
-function saveConfig(config) {
+async function saveConfig(config) {
     // 保存配置
     currentConfig = config;
     GM_setValue('config', currentConfig);
-    showToast(translation.saveSuccessfully);
+
+    // 设置 iframe 依赖全局样式。重新加载样式前先移除它，避免失去 CSS 后
+    // 退化成浏览器默认尺寸并残留在页面左侧。
+    if (settingIframe) {
+        settingIframe.remove();
+        settingIframe = undefined;
+    }
 
     // 移除旧元素
     if (style) {
-        document.head.removeChild(style);
+        style.remove();
         style = undefined;
     }
     if (buttonDiv) {
-        document.body.removeChild(buttonDiv);
+        buttonDiv.remove();
         buttonDiv = undefined;
+        settingButton = undefined;
     }
 
-    // 重新初始化
+    // 重新初始化。即使当前页面仍没有匹配解析器，也恢复设置 UI 的基础样式，
+    // 以便保存成功提示保持正常，并让下次从 Tampermonkey 菜单打开设置时状态干净。
     isReloading = true;
-    init(currentUrl);
+    await init(currentUrl);
+    await ensureSettingsUi();
+    showToast(translation.saveSuccessfully);
 }
 
 function startFlashing(element) {
